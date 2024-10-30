@@ -1,27 +1,31 @@
 use std::cell::RefCell;
+use std::rc::Rc;
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+
+const TIME: Option<NaiveTime> = NaiveTime::from_hms_opt(10, 0, 0);
 
 #[derive(Clone, Debug)]
 pub struct Fab<'a> {
     code: &'a str,
-    id: i32
+    executed: NaiveDateTime,
 }
 
-pub fn mutate_vec(input: Vec<RefCell<Fab>>) -> Vec<RefCell<Fab>> {
+
+pub fn mutate_vec(input: Vec<Rc<RefCell<Fab>>>) -> Vec<Rc<RefCell<Fab>>> {
     if input.len() < 2 {
         return input;
     }
 
     let mut res = Vec::new();
 
-    let current = input[0].clone();
-    for i in 1..input.len() {
-        // check
-        if i == input.len() - 1 || current.borrow().code != input.get(i + 1).unwrap().borrow().code {
-            res.push(current.clone())
+    for i in 0..input.len() {
+        let current = Rc::clone(&input[i]);
+        if i == input.len() - 1 {
+            res.push(current);
+        } else if current.borrow().code != input.get(i + 1).unwrap().borrow().code {
+            res.push(current);
         } else {
-            // here I need a NaiveDateTime, id is just a test
-            current.borrow_mut().id = input.get(i + 1).unwrap().borrow().id;
-            res.push(current.clone());
+            current.borrow_mut().executed = input.get(i + 1).unwrap().borrow().executed;
         }
     }
 
@@ -32,26 +36,28 @@ pub fn mutate_vec(input: Vec<RefCell<Fab>>) -> Vec<RefCell<Fab>> {
 #[test]
 fn simple_ref_cell_test() {
     let mut input = Vec::new();
-    input.push (RefCell::new(Fab {
+
+    input.push (Rc::new(RefCell::new(Fab {
         code: "123",
-        id: 1,
-    }));
-    input.push (RefCell::new(Fab {
+        executed: NaiveDate::from_ymd_opt(2024, 5, 5).unwrap().and_time(TIME.unwrap())
+    })));
+    input.push (Rc::new(RefCell::new(Fab {
         code: "123",
-        id: 2,
-    }));
-    input.push (RefCell::new(Fab {
+        executed: NaiveDate::from_ymd_opt(2024, 5, 6).unwrap().and_time(TIME.unwrap())
+    })));
+    input.push (Rc::new(RefCell::new(Fab {
         code: "123",
-        id: 3,
-    }));
-    input.push (RefCell::new(Fab {
+        executed: NaiveDate::from_ymd_opt(2024, 5, 7).unwrap().and_time(TIME.unwrap()),
+    })));
+    input.push (Rc::new (RefCell::new(Fab {
         code: "1234",
-        id: 4,
-    }));
+        executed: NaiveDate::from_ymd_opt(2024, 5, 8).unwrap().and_time(TIME.unwrap()),
+    })));
 
     let res = mutate_vec(input);
 
     println!("{res:?}");
     assert_eq!(res.len(), 2);
     assert_eq!(res.get(1).unwrap().borrow().code, "1234");
+    assert_eq!(res.get(0).unwrap().borrow().executed, NaiveDate::from_ymd_opt(2024, 5, 7).unwrap().and_time(TIME.unwrap()));
 }
