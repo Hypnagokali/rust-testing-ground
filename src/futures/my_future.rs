@@ -19,11 +19,25 @@ impl MyFuture {
 
         let res_for_thread = progress.clone();
         thread::spawn(move || {
-            // just some async work
-            thread::sleep(Duration::from_secs(3));
+            // just mock some async work
+            thread::sleep(Duration::from_secs(2));
+            if let Ok(mut state) = res_for_thread.lock() {
+                state.message = "Import data ...".to_string();
+                if let Some(waker) = state.waker.take() {
+                    waker.wake();
+                }
+            }
+            thread::sleep(Duration::from_secs(1));
+            if let Ok(mut state) = res_for_thread.lock() {
+                state.message = "Group data ...".to_string();
+                if let Some(waker) = state.waker.take() {
+                    waker.wake();
+                }
+            }
+            thread::sleep(Duration::from_secs(2));
             if let Ok(mut state) = res_for_thread.lock() {
                 state.done = true;
-                state.message = "I am done".to_string();
+                state.message = "I am done !!!".to_string();
                 if let Some(waker) = state.waker.take() {
                     waker.wake();
                 }
