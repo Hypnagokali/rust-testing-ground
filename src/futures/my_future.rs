@@ -3,8 +3,10 @@ use std::pin::Pin;
 use std::string::ToString;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
-use std::thread;
 use std::time::Duration;
+use tokio::sync::mpsc::Receiver;
+use tokio::task::JoinError;
+use tokio::try_join;
 
 pub struct ImportFuture {
     progress: Arc<Mutex<Progress>>,
@@ -15,7 +17,8 @@ impl ImportFuture {
     const GROUP_DATA: &'static str = "Group data ...";
     const DONE: &'static str = "Done \u{1F643}";
 
-    pub fn new() -> Self {
+    pub fn new() -> (Self, Receiver<String>) {
+        let mut current_message = "none".to_string();
         let progress = Arc::new(Mutex::new(Progress {
             message: "started".to_string(),
             done: false,
@@ -23,36 +26,50 @@ impl ImportFuture {
         }));
 
         let res_for_thread = progress.clone();
-        thread::spawn(move || {
-            let (sender, receiver) = tokio::sync::mpsc::channel::<String>(10);
+        let (sender, receiver) = tokio::sync::mpsc::channel::<String>(10);
+        tokio::spawn(async move {
             // just mock some async work
-            thread::sleep(Duration::from_secs(2));
+            tokio::time::sleep(Duration::from_secs(2)).await;
             if let Ok(mut state) = res_for_thread.lock() {
                 state.message = Self::IMPORT_DATA.to_string();
+                current_message = state.message.clone();
                 if let Some(waker) = state.waker.take() {
                     waker.wake();
                 }
             }
-            thread::sleep(Duration::from_secs(1));
+            if let Ok(_) = sender.send(current_message.clone()).await {
+                println!("Sender sends message: import");
+            }
+
+            tokio::time::sleep(Duration::from_secs(1)).await;
             if let Ok(mut state) = res_for_thread.lock() {
                 state.message = Self::GROUP_DATA.to_string();
+                current_message = state.message.clone();
                 if let Some(waker) = state.waker.take() {
                     waker.wake();
                 }
             }
-            thread::sleep(Duration::from_secs(2));
+            if let Ok(_) = sender.send(current_message.clone()).await {
+                println!("Sender sends message: group");
+            }
+
+            tokio::time::sleep(Duration::from_secs(2)).await;
             if let Ok(mut state) = res_for_thread.lock() {
                 state.done = true;
                 state.message = Self::DONE.to_string();
+                current_message = state.message.clone();
                 if let Some(waker) = state.waker.take() {
                     waker.wake();
                 }
             }
+            if let Ok(_) = sender.send(current_message.clone()).await {
+                println!("Sender sends message: done");
+            }
         });
 
-        ImportFuture {
+        (ImportFuture {
             progress,
-        }
+        }, receiver)
     }
 }
 
@@ -86,7 +103,7 @@ impl Future for ImportFuture {
     }
 }
 
-fn do_something() -> ImportFuture {
+fn do_something() -> (ImportFuture, Receiver<String>) {
     println!("Call do_something");
     ImportFuture::new()
 }
@@ -95,7 +112,41 @@ fn do_something() -> ImportFuture {
 #[tokio::test]
 async fn test_future () {
     println!("start test");
-    let result = do_something().await;
+    let fut_rec = do_something();
 
-    assert_eq!(result.result, "Done");
+    let fut = fut_rec.0;
+    let mut receiver = fut_rec.1;
+
+    let h1 = tokio::spawn(async move {
+        fut.await
+    });
+
+    let h2 = tokio::spawn(async move {
+        // busy wait for testing
+        loop {
+            match receiver.recv().await {
+                Some(message) => {
+                    println!("Received message: {:?}", message);
+                    if message.starts_with("Done") {
+                        break;
+                    }
+                }
+                None => {
+                    println!("Nothing received.");
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    });
+
+    match try_join!(h1, h2) {
+        Ok((result1, _)) => {
+            assert_eq!(result1.result, "Done");
+        }
+        Err(_) => {
+            panic!("Received an Err");
+        }
+    }
+
+    // assert_eq!(result.result, "Done");
 }
