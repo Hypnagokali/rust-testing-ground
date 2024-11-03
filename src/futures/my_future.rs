@@ -1,15 +1,20 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::string::ToString;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::thread;
 use std::time::Duration;
 
-pub struct MyFuture {
+pub struct ImportFuture {
     progress: Arc<Mutex<Progress>>,
 }
 
-impl MyFuture {
+impl ImportFuture {
+    const IMPORT_DATA: &'static str = "Import data ...";
+    const GROUP_DATA: &'static str = "Group data ...";
+    const DONE: &'static str = "Done \u{1F643}";
+
     pub fn new() -> Self {
         let progress = Arc::new(Mutex::new(Progress {
             message: "started".to_string(),
@@ -19,17 +24,18 @@ impl MyFuture {
 
         let res_for_thread = progress.clone();
         thread::spawn(move || {
+            let (sender, receiver) = tokio::sync::mpsc::channel::<String>(10);
             // just mock some async work
             thread::sleep(Duration::from_secs(2));
             if let Ok(mut state) = res_for_thread.lock() {
-                state.message = "Import data ...".to_string();
+                state.message = Self::IMPORT_DATA.to_string();
                 if let Some(waker) = state.waker.take() {
                     waker.wake();
                 }
             }
             thread::sleep(Duration::from_secs(1));
             if let Ok(mut state) = res_for_thread.lock() {
-                state.message = "Group data ...".to_string();
+                state.message = Self::GROUP_DATA.to_string();
                 if let Some(waker) = state.waker.take() {
                     waker.wake();
                 }
@@ -37,14 +43,14 @@ impl MyFuture {
             thread::sleep(Duration::from_secs(2));
             if let Ok(mut state) = res_for_thread.lock() {
                 state.done = true;
-                state.message = "I am done !!!".to_string();
+                state.message = Self::DONE.to_string();
                 if let Some(waker) = state.waker.take() {
                     waker.wake();
                 }
             }
         });
 
-        MyFuture {
+        ImportFuture {
             progress,
         }
     }
@@ -60,13 +66,14 @@ pub struct MyResult {
     result: String,
 }
 
-impl Future for MyFuture {
+impl Future for ImportFuture {
     type Output = MyResult;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         println!("Do poll");
         let mut current = self.progress.lock().unwrap();
         if current.done {
+            println!("All done. Message = {}", current.message);
             Poll::Ready(MyResult {
                 result: "Done".to_string()
             })
@@ -79,9 +86,9 @@ impl Future for MyFuture {
     }
 }
 
-fn do_something() -> MyFuture {
+fn do_something() -> ImportFuture {
     println!("Call do_something");
-    MyFuture::new()
+    ImportFuture::new()
 }
 
 
