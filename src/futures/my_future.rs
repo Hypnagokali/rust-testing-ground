@@ -5,9 +5,6 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 use tokio::sync::mpsc::Receiver;
-use tokio::task::JoinError;
-use tokio::try_join;
-
 pub struct ImportFuture {
     progress: Arc<Mutex<Progress>>,
 }
@@ -103,13 +100,17 @@ impl Future for ImportFuture {
     }
 }
 
-fn do_something() -> (ImportFuture, Receiver<String>) {
+pub fn do_something() -> (ImportFuture, Receiver<String>) {
     println!("Call do_something");
     ImportFuture::new()
 }
 
+mod tests {
+    use std::time::Duration;
+    use tokio::try_join;
+    use crate::futures::my_future::do_something;
 
-#[tokio::test]
+    #[tokio::test]
 async fn test_future () {
     println!("start test");
     let fut_rec = do_something();
@@ -148,5 +149,6 @@ async fn test_future () {
         }
     }
 
-    // assert_eq!(result.result, "Done");
+}
+
 }

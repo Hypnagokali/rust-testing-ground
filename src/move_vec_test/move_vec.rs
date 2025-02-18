@@ -1,5 +1,4 @@
-fn mutate_customer<Fun>(cust: Customer, f: Fun)
-                        -> Customer
+fn mutate_customer<Fun>(cust: Customer, f: Fun) -> Customer
 where
     Fun: FnOnce(Customer) -> Customer,
 {
