@@ -4,7 +4,7 @@ use jsonwebtoken::{encode, EncodingKey, Header};
 use rsa::{pkcs8::{DecodePrivateKey, DecodePublicKey}, Pkcs1v15Sign, RsaPrivateKey, RsaPublicKey};
 use sha2::{digest::{consts::U32, generic_array::GenericArray}, Digest, Sha256};
 
-use super::{jwt::Claims, keys::{PRIVATE_KEY, PUBKEY}};
+use super::{jwt::{Claims, JWKS}, keys::{PRIVATE_KEY, PUBKEY}};
 
 
 pub fn hash_message(msg: &str) -> GenericArray<u8, U32> {
@@ -32,6 +32,10 @@ pub fn verify_message(msg: &str, signature: &Vec<u8>) -> bool {
     }
 }
 
+pub fn get_jwks() -> Vec<JWKS> {
+    vec![JWKS::test_without_cert_chain()]
+}
+
 pub fn get_token() -> String {
     let iat = SystemTime::now()
     .duration_since(UNIX_EPOCH)
@@ -47,8 +51,11 @@ pub fn get_token() -> String {
         exp,
     };
 
+    let mut h = Header::new(jsonwebtoken::Algorithm::RS256);
+    h.kid = Some("test".to_owned());
+
     encode(
-        &Header::new(jsonwebtoken::Algorithm::RS256), 
+        &h, 
         &claims, 
         &EncodingKey::from_rsa_pem(PRIVATE_KEY.as_bytes()).unwrap()
     ).unwrap()
@@ -57,9 +64,9 @@ pub fn get_token() -> String {
 #[cfg(test)]
 mod tests {
     use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
-    use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+    use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
     use rsa::{pkcs8::DecodePublicKey, traits::PublicKeyParts, RsaPublicKey};
-    use crate::signing::{jwt::{Claims, JWKS}, keys::PUBKEY, sign_lib::get_token};
+    use crate::signing::{jwt::Claims, keys::PUBKEY, sign_lib::{get_jwks, get_token}};
 
     use super::{sign_message, verify_message};
 
@@ -89,7 +96,17 @@ mod tests {
     #[test]
     fn test_verify_token() {
         let jwt = get_token();
-        let jwks = JWKS::test_without_cert_chain();
+        let jwks_vec = get_jwks();
+
+        let header = decode_header(&jwt).unwrap();
+
+        let jwks = jwks_vec.iter().find(|&ks| {
+            if let Some(kid) = &header.kid {
+                kid == &ks.kid
+            } else {
+                false
+            }
+        }).unwrap();
 
         let decoding_key = DecodingKey::from_rsa_components(&jwks.n, &jwks.e).unwrap();
         let validation = Validation::new(Algorithm::RS256);
