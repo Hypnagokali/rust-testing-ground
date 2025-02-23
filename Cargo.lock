@@ -598,6 +598,7 @@ dependencies = [
 name = "rust_testing_ground"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
  "jsonwebtoken",
  "rsa",

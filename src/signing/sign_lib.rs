@@ -56,8 +56,10 @@ pub fn get_token() -> String {
 
 #[cfg(test)]
 mod tests {
+    use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
     use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-    use crate::signing::{jwt::Claims, keys::PUBKEY, sign_lib::get_token};
+    use rsa::{pkcs8::DecodePublicKey, traits::PublicKeyParts, RsaPublicKey};
+    use crate::signing::{jwt::{Claims, JWKS}, keys::PUBKEY, sign_lib::get_token};
 
     use super::{sign_message, verify_message};
 
@@ -72,12 +74,24 @@ mod tests {
     }
 
     #[test]
+    fn extract_e_n() {
+        // this is just for extracting the modulus and exponent from the key
+        let pk = RsaPublicKey::from_public_key_pem(PUBKEY).unwrap();
+
+        let e = pk.e().to_bytes_be();
+        let n = pk.n().to_bytes_be();
+
+        let eb64 = BASE64_URL_SAFE_NO_PAD.encode(e);
+        let nb64 = BASE64_URL_SAFE_NO_PAD.encode(n);
+        println!("e: {}, n: {}", eb64, nb64);
+    }
+
+    #[test]
     fn test_verify_token() {
-        // just hardcoded for now
         let jwt = get_token();
+        let jwks = JWKS::test_without_cert_chain();
 
-        let decoding_key = DecodingKey::from_rsa_pem(PUBKEY.as_bytes()).unwrap();
-
+        let decoding_key = DecodingKey::from_rsa_components(&jwks.n, &jwks.e).unwrap();
         let validation = Validation::new(Algorithm::RS256);
         let decoded = decode::<Claims>(&jwt, &decoding_key, &validation).unwrap();
 
